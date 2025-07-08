@@ -5,111 +5,125 @@
 	<meta charset="cp1252">
 	<title>Cube 3D minimal</title>
 	<style>
-		body {
-			font-family: Arial;
-			margin: 0;
-			padding: 20px;
-			display: flex;
-			flex-direction: column;
-			align-items: center
-		}
-
-		#grid {
-			display: grid;
-			gap: 2px;
-			margin: 20px 0
-		}
-
-		.cell {
-			width: 24px;
-			height: 24px;
-			border: 1px solid #999;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			font-size: 14px
-		}
-
-		.empty {
-			background: #eee
-		}
-
-		.wall {
-			background: #444
-		}
-
-		.player {
-			background: #2a9;
-			border: 2px solid #000
-		}
-
-		.goal {
-			background: #c22;
-			color: #fff
-		}
+		body {font-family: Arial;margin: 0;padding: 20px;display: flex;flex-direction: column;align-items: center}
+		#grid {display: grid;gap: 2px;margin: 20px 0}
+		.cell {width: 24px;height: 24px;border: 1px solid #999;display: flex;align-items: center;justify-content: center;font-size: 14px}
+		.empty {background: #eee}
+		.wall {background: #444}
+		.player {background: #2a9;border: 2px solid #000}
+		.goal {background: #c22;color: #fff}
 	</style>
 </head>
 
 <body>
 	<p id="description">
-		Ce jeu affiche un labyrinthe en trois dimensions dans un cube de taille N×N×N.
-		Le joueur se déplace librement dans l’espace (flèches pour X-Y, Q et A pour changer de couche Z)
-		et doit atteindre la case but.
-		Un curseur (slider) permet de faire défiler les coupes horizontales pour comprendre la structure interne du cube ;
-		chaque couche révèle murs, couloirs, obstacles et énigmes.
-		L’objectif est de résoudre ces défis et de rejoindre la case centrale (ou toute autre position définie comme but)
-		en tenant compte des contraintes spatiales imposées par le labyrinthe en 3D.
+		Ce jeu affiche un labyrinthe en trois dimensions dans un cube N×N×N.<br>
+		Difficulté 1 : au moins dix chemins possibles. Difficulté 10 : un seul chemin.
 	</p>
 
+	<label>Taille N : <input id="size" type="number" min="2" max="100" value="5"></label>
+	<label>Difficulté 1-10 : <input id="difficulty" type="number" min="1" max="10" value="5"></label>
 	<label>Couche Z : <input id="slider" type="range" min="0" max="4" value="0"></label>
+
+	<p id="message"></p>
 	<div id="grid"></div>
-	<p>Déplacement : flèches (XY), Q (haut), A (bas)</p>
+	<p>Déplacements : flèches (XY), Q (haut), A (bas)</p>
 
 	<script>
-		const N = 5;
+		// # Données
 		const EMPTY = 0, WALL = 1, PLAYER = 2, GOAL = 3;
 
-		// Génère un cube aléatoire avec murs (30 %) puis place joueur et but
+		// # Variables d’état
+		let N = parseInt(document.getElementById("size").value, 10);
+		let difficulty = parseInt(document.getElementById("difficulty").value, 10);
+		let cube, player;
+
+		// # Nœuds DOM utiles
+		const grid = document.getElementById("grid");
+		const slider = document.getElementById("slider");
+		const sizeInput = document.getElementById("size");
+		const diffInput = document.getElementById("difficulty");
+		const message = document.getElementById("message");
+
+		// # Fonctions utilitaires principales
 		function generateCube() {
-			const cube = Array.from({length: N}, () => Array.from({length: N}, () => Array(N).fill(EMPTY)));
-			for (let z = 0; z < N; z++)for (let y = 0; y < N; y++)for (let x = 0; x < N; x++) {
-				if (Math.random() < 0.3) cube[z][y][x] = WALL;
+			// Initialise tout en murs
+			const c = Array.from({ length: N }, () =>
+				Array.from({ length: N }, () => Array(N).fill(WALL))
+			);
+
+			// Chemin garanti start→goal
+			let x = 0, y = 0, z = 0;
+			c[z][y][x] = EMPTY;
+			while (x !== N - 1 || y !== N - 1 || z !== N - 1) {
+				const dirs = [];
+				if (x < N - 1) dirs.push([1, 0, 0]);
+				if (y < N - 1) dirs.push([0, 1, 0]);
+				if (z < N - 1) dirs.push([0, 0, 1]);
+				const [dx, dy, dz] = dirs[Math.floor(Math.random() * dirs.length)];
+				x += dx; y += dy; z += dz;
+				c[z][y][x] = EMPTY;
 			}
-			cube[0][0][0] = PLAYER;
-			cube[N - 1][N - 1][N - 1] = GOAL;
-			return cube;
+
+			// Ajout d’ouvertures selon la difficulté :
+			// difficulté 10 : unique → aucune ouverture supplémentaire
+			// difficulté 1 : beaucoup d’ouvertures
+			const wallProb = 0.8 * (difficulty / 10); // 0.08 … 0.8
+			for (let zz = 0; zz < N; zz++)
+				for (let yy = 0; yy < N; yy++)
+					for (let xx = 0; xx < N; xx++)
+						if (c[zz][yy][xx] === WALL && Math.random() > wallProb)
+							c[zz][yy][xx] = EMPTY;
+
+			c[0][0][0] = PLAYER;
+			c[N - 1][N - 1][N - 1] = GOAL;
+			return c;
 		}
 
-		let cube = generateCube();
-		let player = {x: 0, y: 0, z: 0};
+		function resetGame() {
+			cube = generateCube();
+			player = { x: 0, y: 0, z: 0 };
+			slider.max = N - 1;
+			slider.value = 0;
+			grid.style.gridTemplateColumns = `repeat(${N}, 24px)`;
+			message.textContent = "";
+			render();
+		}
 
-		const slider = document.getElementById("slider");
-		const grid = document.getElementById("grid");
-		grid.style.gridTemplateColumns = `repeat(${N}, 24px)`;
-
+		// # Fonctions principales
 		function render() {
 			const z = parseInt(slider.value, 10);
 			grid.innerHTML = "";
-			for (let y = 0; y < N; y++)for (let x = 0; x < N; x++) {
-				const v = cube[z][y][x];
-				const cell = document.createElement("div");
-				cell.className = "cell " + (v === EMPTY ? "empty" : v === WALL ? "wall" : v === PLAYER ? "player" : "goal");
-				grid.appendChild(cell);
-			}
+			for (let y = 0; y < N; y++)
+				for (let x = 0; x < N; x++) {
+					const v = cube[z][y][x];
+					const cell = document.createElement("div");
+					cell.className = "cell " + (v === EMPTY ? "empty" : v === WALL ? "wall" : v === PLAYER ? "player" : "goal");
+					grid.appendChild(cell);
+				}
 		}
 
 		function move(dx, dy, dz) {
 			const nx = player.x + dx, ny = player.y + dy, nz = player.z + dz;
 			if (nx < 0 || ny < 0 || nz < 0 || nx >= N || ny >= N || nz >= N) return;
 			if (cube[nz][ny][nx] === WALL) return;
-			cube[player.z][player.y][player.x] = EMPTY;
-			player = {x: nx, y: ny, z: nz};
-			if (cube[nz][ny][nx] === GOAL) {alert("Bravo, but atteint !"); cube = generateCube(); player = {x: 0, y: 0, z: 0}; slider.value = 0;}
+
+			if (cube[player.z][player.y][player.x] !== GOAL)
+				cube[player.z][player.y][player.x] = EMPTY;
+
+			player = { x: nx, y: ny, z: nz };
+
+			if (cube[nz][ny][nx] === GOAL)
+				message.textContent = "Bravo, but atteint !";
+			else
+				message.textContent = "";
+
 			cube[player.z][player.y][player.x] = PLAYER;
 			slider.value = player.z;
 			render();
 		}
 
+		// # Main : initialisation et listeners
 		document.addEventListener("keydown", e => {
 			if (e.key === "ArrowUp") move(0, -1, 0);
 			else if (e.key === "ArrowDown") move(0, 1, 0);
@@ -120,9 +134,19 @@
 		});
 
 		slider.addEventListener("input", render);
-		render();
-	</script>
 
+		sizeInput.addEventListener("change", () => {
+			N = parseInt(sizeInput.value, 10);
+			resetGame();
+		});
+
+		diffInput.addEventListener("change", () => {
+			difficulty = parseInt(diffInput.value, 10);
+			resetGame();
+		});
+
+		resetGame(); // Lancement du programme
+	</script>
 </body>
 
 </html>
