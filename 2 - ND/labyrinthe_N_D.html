@@ -62,7 +62,12 @@
 	<label id="slider-wrap">Couche Z : <input id="slider" type="range" min="0" max="4" value="0"></label>
 	<span id="axis">(axe actif : Z)</span>
 	<p id="message"></p>
-	<div id="grid"></div>
+	<div style="display:flex;align-items:flex-start;">
+		<pre id="tree" style="font-family:monospace;margin:0 20px 0 0"></pre>
+		<div>
+			<div id="grid"></div>
+		</div>
+	</div>
 	<p>
 		Déplacements : flèches (XY), Q (+axe), A (-axe), Z/S (axe actif, si D≥4)
 	</p>
@@ -97,6 +102,71 @@
 			for (let i = 0; i < coord.length - 1; i++) arr = arr[coord[i]];
 			arr[coord[coord.length - 1]] = val;
 		}
+
+		function renderTree() {
+			const tree = document.getElementById("tree");
+			tree.innerHTML = ""; // reset
+
+			function isPrefix(arr, prefix) {
+				for (let i = 0; i < prefix.length; i++) if (arr[i] !== prefix[i]) return false;
+				return true;
+			}
+			const pos = player;
+			const tgt = goal;
+
+			// État d'ouverture/repli des branches (persistant via attributs data)
+			if (!window._treeOpen) window._treeOpen = {};
+			const _treeOpen = window._treeOpen;
+
+			// Chemin joueur et but (à toujours déplier)
+			function prefixKey(prefix) {return prefix.join("_");}
+			const alwaysOpen = new Set();
+			for (let i = 0; i <= D; i++) {
+				alwaysOpen.add(prefixKey(pos.slice(0, i)));
+				alwaysOpen.add(prefixKey(tgt.slice(0, i)));
+			}
+
+			function walk(prefix, depth, parent) {
+				if (depth === D) {
+					let here = getND(cube, prefix);
+					let sym = here === WALL ? "▒" : here === GOAL ? "🎯" : here === PLAYER ? "👤" : "·";
+					const leaf = document.createElement("div");
+					leaf.style.marginLeft = depth * 16 + "px";
+					leaf.textContent = sym;
+					parent.appendChild(leaf);
+					return;
+				}
+				const thisKey = prefixKey(prefix);
+				const open = alwaysOpen.has(thisKey) || _treeOpen[thisKey];
+				const node = document.createElement("div");
+				node.style.marginLeft = depth * 16 + "px";
+				const btn = document.createElement("button");
+				btn.style.width = "1.3em"; btn.style.padding = "0 2px";
+				btn.textContent = open ? "–" : "+";
+				// Désactive bouton sur branche sortie (goal)
+				const isGoalBranch = isPrefix(tgt, prefix) && prefix.length < tgt.length;
+				btn.disabled = isGoalBranch && tgt.slice(0, prefix.length).join("_") === prefix.join("_");
+				btn.onclick = function (e) {
+					e.stopPropagation();
+					if (!btn.disabled) {
+						_treeOpen[thisKey] = !_treeOpen[thisKey];
+						renderTree();
+					}
+				};
+				node.appendChild(btn);
+				node.appendChild(document.createTextNode(" " + (prefix.length < D ? prefix[prefix.length - 1] ?? "root" : "")));
+				parent.appendChild(node);
+				if (open) {
+					for (let i = 0; i < N; i++) {
+						walk(prefix.concat(i), depth + 1, parent);
+					}
+				}
+			}
+			const root = document.createElement("div");
+			walk([], 0, root);
+			tree.appendChild(root);
+		}
+
 
 		function resetGame() {
 			cube = makeArray(D, N, WALL);
@@ -172,6 +242,7 @@
 						grid.appendChild(cell);
 					}
 			}
+			renderTree();
 		}
 
 		function moveOnAxis(axis, delta) {
