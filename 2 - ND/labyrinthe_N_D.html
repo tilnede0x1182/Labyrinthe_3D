@@ -56,8 +56,8 @@
 		Difficulté 1 : ≥10 chemins. Difficulté 10 : unique chemin.<br>
 	</p>
 
-	<label>Taille N : <input id="size" type="number" min="2" max="100" value="5"></label>
-	<label>Difficulté 1-10 : <input id="difficulty" type="number" min="1" max="10" value="5"></label>
+	<label>Taille N : <input id="size" type="number" min="2" max="100" value="10"></label>
+	<label>Difficulté 1-10 : <input id="difficulty" type="number" min="1" max="10" value="7"></label>
 	<label>Dimensions 1-100 : <input id="dimensions" type="number" min="1" max="100" value="3"></label>
 	<label id="slider-wrap">Couche Z : <input id="slider" type="range" min="0" max="4" value="0"></label>
 	<span id="axis">(axe actif : Z)</span>
@@ -78,7 +78,9 @@
 		let N = parseInt(document.getElementById("size").value, 10);
 		let difficulty = parseInt(document.getElementById("difficulty").value, 10);
 		let D = parseInt(document.getElementById("dimensions").value, 10);
-		let activeAxis = 2;
+		let displayAxis = D > 2 ? 2 : 0;
+		let activeAxis = D > 2 ? 2 : 0;
+		let sliderVals = Array(100).fill(0);
 		let cube, player, goal;
 
 		const grid = document.getElementById("grid");
@@ -89,7 +91,15 @@
 		const message = document.getElementById("message");
 		const axisInfo = document.getElementById("axis");
 		const sliderWrap = document.getElementById("slider-wrap");
+		const tree = document.getElementById("tree");
 
+		// slider dynamique (label d’axe)
+		const sliderLabel = document.createElement("span");
+		sliderLabel.id = "slider-label";
+		sliderWrap.insertBefore(sliderLabel, sliderWrap.childNodes[1]);
+		sliderLabel.textContent = (displayAxis + 1);
+
+		// ND helpers
 		function makeArray(dim, size, val) {
 			if (dim === 0) return val;
 			return Array.from({length: size}, () => makeArray(dim - 1, size, val));
@@ -104,69 +114,86 @@
 		}
 
 		function renderTree() {
-			const tree = document.getElementById("tree");
-			tree.innerHTML = ""; // reset
-
+			if (D <= 3) {
+				tree.style.display = "none";
+				tree.innerHTML = "";
+				return;
+			}
+			tree.style.display = "";
+			tree.innerHTML = "";
+			const pos = player;
+			const tgt = goal;
 			function isPrefix(arr, prefix) {
 				for (let i = 0; i < prefix.length; i++) if (arr[i] !== prefix[i]) return false;
 				return true;
 			}
-			const pos = player;
-			const tgt = goal;
-
-			// État d'ouverture/repli des branches (persistant via attributs data)
 			if (!window._treeOpen) window._treeOpen = {};
 			const _treeOpen = window._treeOpen;
-
-			// Chemin joueur et but (à toujours déplier)
 			function prefixKey(prefix) {return prefix.join("_");}
 			const alwaysOpen = new Set();
 			for (let i = 0; i <= D; i++) {
 				alwaysOpen.add(prefixKey(pos.slice(0, i)));
 				alwaysOpen.add(prefixKey(tgt.slice(0, i)));
 			}
-
-			function walk(prefix, depth, parent) {
-				if (depth === D) {
-					let here = getND(cube, prefix);
-					let sym = here === WALL ? "▒" : here === GOAL ? "🎯" : here === PLAYER ? "👤" : "·";
-					const leaf = document.createElement("div");
-					leaf.style.marginLeft = depth * 16 + "px";
-					leaf.textContent = sym;
-					parent.appendChild(leaf);
+			function walk(prefix, currentDim, parent, indent) {
+				if (currentDim === 3) {
+					const coords = prefix.slice();
+					for (let i = 0; i < N; i++) {
+						const here = getND(cube, coords.concat(i));
+						let sym = here === WALL ? "▒" : here === GOAL ? "🎯" : here === PLAYER ? "👤" : "·";
+						const leaf = document.createElement("div");
+						leaf.style.fontFamily = "monospace";
+						leaf.textContent = indent + "|-" + sym;
+						parent.appendChild(leaf);
+					}
 					return;
 				}
-				const thisKey = prefixKey(prefix);
-				const open = alwaysOpen.has(thisKey) || _treeOpen[thisKey];
-				const node = document.createElement("div");
-				node.style.marginLeft = depth * 16 + "px";
-				const btn = document.createElement("button");
-				btn.style.width = "1.3em"; btn.style.padding = "0 2px";
-				btn.textContent = open ? "–" : "+";
-				// Désactive bouton sur branche sortie (goal)
-				const isGoalBranch = isPrefix(tgt, prefix) && prefix.length < tgt.length;
-				btn.disabled = isGoalBranch && tgt.slice(0, prefix.length).join("_") === prefix.join("_");
-				btn.onclick = function (e) {
-					e.stopPropagation();
-					if (!btn.disabled) {
-						_treeOpen[thisKey] = !_treeOpen[thisKey];
-						renderTree();
+				for (let i = 0; i < N; i++) {
+					// Ne développe que la branche ND affichée
+					if (currentDim > 3) {
+						if (currentDim === displayAxis) {
+							if (i !== player[displayAxis]) continue;
+						} else {
+							if (i !== player[currentDim]) continue;
+						}
 					}
-				};
-				node.appendChild(btn);
-				node.appendChild(document.createTextNode(" " + (prefix.length < D ? prefix[prefix.length - 1] ?? "root" : "")));
-				parent.appendChild(node);
-				if (open) {
-					for (let i = 0; i < N; i++) {
-						walk(prefix.concat(i), depth + 1, parent);
+					const thisPrefix = prefix.concat(i);
+					const thisKey = prefixKey(thisPrefix);
+					const open = alwaysOpen.has(thisKey) || _treeOpen[thisKey];
+
+					const node = document.createElement("div");
+					node.style.fontFamily = "monospace";
+					node.style.marginLeft = (currentDim === D ? 0 : 16) + "px";
+					if (currentDim > 3) {
+						const btn = document.createElement("button");
+						btn.style.width = "1.3em"; btn.style.padding = "0 2px";
+						btn.textContent = open ? "–" : "+";
+						const isGoalBranch = isPrefix(tgt, thisPrefix) && thisPrefix.length < tgt.length && currentDim === D - thisPrefix.length + 1;
+						btn.disabled = isGoalBranch;
+						btn.onclick = function (e) {
+							e.stopPropagation();
+							if (!btn.disabled) {
+								_treeOpen[thisKey] = !_treeOpen[thisKey];
+								renderTree();
+							}
+						};
+						node.appendChild(btn);
+						node.appendChild(document.createTextNode(" " + currentDim));
+					}
+					parent.appendChild(node);
+
+					if (open && currentDim > 3) {
+						walk(thisPrefix, currentDim - 1, parent, indent + "  ");
+					}
+					if (currentDim === 3) {
+						// rien, géré plus haut
 					}
 				}
 			}
 			const root = document.createElement("div");
-			walk([], 0, root);
+			walk([], D, root, "");
 			tree.appendChild(root);
 		}
-
 
 		function resetGame() {
 			cube = makeArray(D, N, WALL);
@@ -197,16 +224,22 @@
 			setND(cube, goal, GOAL);
 
 			slider.max = N - 1;
-			slider.value = 0;
+			slider.value = player[displayAxis];
+			sliderVals = Array(D).fill(0);
+			sliderVals[displayAxis] = player[displayAxis];
 			grid.style.gridTemplateColumns = `repeat(${N}, 24px)`;
 			message.textContent = "";
 			sliderWrap.style.display = (D < 3) ? "none" : "inline";
-			axisInfo.textContent = `(axe actif : ${["X", "Y", "Z"][activeAxis] ?? activeAxis})`;
+			sliderLabel.textContent = (displayAxis + 1);
+			axisInfo.textContent = `(axe actif : ${activeAxis + 1})`;
 			render();
 		}
 
 		function render() {
 			grid.innerHTML = "";
+			slider.value = player[displayAxis];
+			sliderLabel.textContent = (displayAxis + 1);
+			axisInfo.textContent = `(axe actif : ${activeAxis + 1})`;
 			if (D === 1) {
 				grid.style.gridTemplateColumns = `repeat(${N}, 24px)`;
 				for (let x = 0; x < N; x++) {
@@ -215,8 +248,7 @@
 					cell.className = "cell " + (v === EMPTY ? "empty" : v === WALL ? "wall" : v === PLAYER ? "player" : "goal");
 					grid.appendChild(cell);
 				}
-			}
-			else if (D === 2) {
+			} else if (D === 2) {
 				grid.style.gridTemplateColumns = `repeat(${N}, 24px)`;
 				for (let y = 0; y < N; y++)
 					for (let x = 0; x < N; x++) {
@@ -225,16 +257,23 @@
 						cell.className = "cell " + (v === EMPTY ? "empty" : v === WALL ? "wall" : v === PLAYER ? "player" : "goal");
 						grid.appendChild(cell);
 					}
-			}
-			else {
-				const z = parseInt(slider.value, 10);
+			} else {
+				const sliceVal = player[displayAxis];
+				const coordFixes = [];
+				for (let d = 0; d < D; d++) {
+					if (d === 0 || d === 1) continue;
+					if (d === displayAxis) continue;
+					coordFixes[d] = d < player.length ? player[d] : 0;
+				}
 				grid.style.gridTemplateColumns = `repeat(${N}, 24px)`;
 				for (let y = 0; y < N; y++)
 					for (let x = 0; x < N; x++) {
-						let coords = [x, y];
-						while (coords.length < D) {
-							if (coords.length === 2) coords.push(z);
-							else coords.push(0);
+						const coords = [];
+						for (let d = 0; d < D; d++) {
+							if (d === 0) coords.push(x);
+							else if (d === 1) coords.push(y);
+							else if (d === displayAxis) coords.push(sliceVal);
+							else coords.push(coordFixes[d]);
 						}
 						const v = getND(cube, coords);
 						const cell = document.createElement("div");
@@ -252,13 +291,16 @@
 			if (getND(cube, next) === WALL) return;
 			if (getND(cube, player) !== GOAL) setND(cube, player, EMPTY);
 			player = next;
+			// Synchronise grille/coupe ND
+			if (D > 2) {
+				slider.value = player[displayAxis];
+			}
 			if (player.every((v, i) => v === goal[i])) {
 				resetGame();
 				message.textContent = "Bravo, but atteint !";
 				return;
 			}
 			setND(cube, player, PLAYER);
-			if (D >= 3 && activeAxis === 2) slider.value = player[2];
 			render();
 		}
 
@@ -269,18 +311,30 @@
 			else if (D >= 2 && (e.key === "ArrowUp")) moveOnAxis(1, -1);
 			else if (D >= 3 && (e.key === "a" || e.key === "A")) moveOnAxis(activeAxis, +1);
 			else if (D >= 3 && (e.key === "q" || e.key === "Q")) moveOnAxis(activeAxis, -1);
-			else if (D >= 4 && (e.key === "z" || e.key === "Z")) {
-				if (activeAxis < D - 1) activeAxis++;
-				axisInfo.textContent = `(axe actif : ${["X", "Y", "Z"][activeAxis] ?? activeAxis})`;
+			else if (D >= 3 && (e.key === "z" || e.key === "Z")) {
+				if (displayAxis < D - 1) displayAxis++;
+				sliderLabel.textContent = (displayAxis + 1);
+				render();
 			}
-			else if (D >= 4 && (e.key === "s" || e.key === "S")) {
+			else if (D >= 3 && (e.key === "s" || e.key === "S")) {
+				if (displayAxis > 2) displayAxis--;
+				sliderLabel.textContent = (displayAxis + 1);
+				render();
+			}
+			else if (D >= 3 && (e.key === "w" || e.key === "W")) {
+				if (activeAxis < D - 1) activeAxis++;
+				axisInfo.textContent = `(axe actif : ${(activeAxis + 1)})`;
+			}
+			else if (D >= 3 && (e.key === "x" || e.key === "X")) {
 				if (activeAxis > 2) activeAxis--;
-				axisInfo.textContent = `(axe actif : ${["X", "Y", "Z"][activeAxis] ?? activeAxis})`;
+				axisInfo.textContent = `(axe actif : ${(activeAxis + 1)})`;
 			}
 		});
 
-		slider.addEventListener("input", render);
-
+		slider.addEventListener("input", function () {
+			player[displayAxis] = parseInt(slider.value, 10);
+			render();
+		});
 		sizeInput.addEventListener("change", () => {
 			N = parseInt(sizeInput.value, 10);
 			resetGame();
@@ -291,7 +345,9 @@
 		});
 		dimsInput.addEventListener("change", () => {
 			D = parseInt(dimsInput.value, 10);
-			activeAxis = Math.min(activeAxis, Math.max(2, D - 1));
+			displayAxis = D > 2 ? 2 : 0;
+			activeAxis = D > 2 ? 2 : 0;
+			sliderVals = Array(D).fill(0);
 			resetGame();
 		});
 		resetGame();
